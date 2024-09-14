@@ -3,29 +3,18 @@ import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 
 import { AppDispatch, RootType } from "./state/store";
-import { ADD_TODO, DELETE_TODO, EDIT_TODO } from "./state/todo/todoSlice";
+import {
+  ADD_TODO,
+  COMPLETE_TODO,
+  DELETE_TODO,
+  EDIT_TODO,
+  FETCH_TODO,
+  UPDATE_TODO,
+} from "./state/todo/todoSlice";
 
-// import {
-//   Dialog,
-//   DialogContent,
-//   DialogDescription,
-//   DialogHeader,
-//   DialogTitle,
-//   DialogTrigger,
-// } from "@/components/ui/dialog";
-// import {
-//   Table,
-//   TableBody,
-//   TableCaption,
-//   TableCell,
-//   TableHead,
-//   TableHeader,
-//   TableRow,
-// } from "@/components/ui/table";
-
-import { format } from "date-fns";
 import { Check, Edit2, PlusCircle, Trash2, X } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
+import { Checkbox } from "./components/ui/checkbox";
 import { Input } from "./components/ui/input";
 import { Toggle } from "./components/ui/toggle";
 import { TOGGLE_THEME } from "./state/todo/darkModeSlice";
@@ -37,22 +26,32 @@ const App: React.FC = () => {
 
   const taskRef = useRef<HTMLInputElement>(null);
 
+  // Focus on Add Task Input field on mount
   useEffect(() => {
     taskRef.current?.focus();
   }, []);
 
+  const hasMounted = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+    dispatch(FETCH_TODO());
+  }, [dispatch]);
+
   const addTask = (e: FormEvent) => {
     e.preventDefault();
 
-    const date = new Date();
-    const dateToday = format(date, "dd/MM/yyyy");
-
     if (taskRef.current && taskRef.current.value.trim()) {
       const task = {
+        firebaseId: String(Date.now()),
         id: Date.now(),
         title: taskRef.current.value.trim(),
-        dateAdded: dateToday,
+        isCompleted: false,
       };
+      dispatch(UPDATE_TODO({ task: task, actionType: "add" }));
       dispatch(ADD_TODO(task));
       taskRef.current.value = "";
     }
@@ -74,6 +73,11 @@ const App: React.FC = () => {
 
     if (editText.trim()) {
       dispatch(EDIT_TODO([editText, taskId]));
+      const selectTask = todo.find((task) => task.id === taskId);
+      if (selectTask) {
+        const updatedTask = { ...selectTask, title: editText };
+        dispatch(UPDATE_TODO({ task: updatedTask, actionType: "update" }));
+      }
       setEditingTask(null);
       setEditText("");
     }
@@ -87,11 +91,15 @@ const App: React.FC = () => {
   // Dark Mode emerlu
 
   const theme = darkmode.toggleState
-    ? { backgroundColor: "black", color: "white" }
+    ? { backgroundColor: "black", color: "white", borderColor: "black" }
     : { backgroundColor: "white", color: "black" };
 
   return (
-    <div className="min-h-screen flex justify-center items-center">
+    <div
+      className={`min-h-screen flex justify-center items-center transition-colors ${
+        darkmode.toggleState && "bg-gray-950"
+      }`}
+    >
       <Card style={theme} className="w-full max-w-md transition-colors">
         <CardContent className="p-6">
           <div className="flex justify-between">
@@ -136,7 +144,35 @@ const App: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <span className="flex-grow">{task.title}</span>
+                    <Checkbox
+                      id={`task-${task.id}`}
+                      checked={task.isCompleted}
+                      onCheckedChange={() => {
+                        dispatch(COMPLETE_TODO(task.id));
+                        const selectTask = todo.find(
+                          (todo) => todo.id === task.id
+                        );
+                        if (selectTask) {
+                          const updatedTask = {
+                            ...selectTask,
+                            isCompleted: !selectTask.isCompleted,
+                          };
+                          dispatch(
+                            UPDATE_TODO({
+                              task: updatedTask,
+                              actionType: "update",
+                            })
+                          );
+                        }
+                      }}
+                    />
+                    <span
+                      className={`flex-grow ${
+                        task.isCompleted && "line-through"
+                      }`}
+                    >
+                      {task.title}
+                    </span>
                     <Button
                       size="icon"
                       variant="outline"
@@ -149,7 +185,12 @@ const App: React.FC = () => {
                       size="icon"
                       variant="outline"
                       className={`text-black`}
-                      onClick={() => dispatch(DELETE_TODO(task.id))}
+                      onClick={() => {
+                        dispatch(DELETE_TODO(task.id));
+                        dispatch(
+                          UPDATE_TODO({ task: task, actionType: "delete" })
+                        );
+                      }}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
